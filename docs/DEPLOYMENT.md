@@ -72,6 +72,19 @@ curl --fail https://qdrop.example.com/readyz
 
 期望 readyz 返回 {"ready":true}。API 单实例、非 root，SQLite WAL 和正文在私有专用卷；Caddy 为唯一公网入口。启动自动执行 Alembic。失败先查 DNS、端口、证书及容器日志，不公开明文 API。
 
+### 已有 Apache 或其他 HTTPS 代理
+
+已有代理占用 80/443 时，使用下面的替代启动命令，只启动 API，不启动本项目的 Caddy：
+
+```bash
+docker compose --env-file deploy/.env -f deploy/compose.yaml -f deploy/compose.external-proxy.example.yaml config --quiet
+docker compose --env-file deploy/.env -f deploy/compose.yaml -f deploy/compose.external-proxy.example.yaml up -d --build api
+```
+
+API_BIND_PORT 可在私有 .env 调整，默认 18080；API 只绑定 127.0.0.1。Apache 示例见 deploy/apache-vhost.example.conf，要求 2.4.47+ 及 proxy/proxy_http/ssl/headers/reqtimeout 模块。在服务器复制为自己的独立站点，替换域名、证书路径和后端端口；文件上限需与 .env 保持一致。先执行 apache2ctl configtest，通过后 graceful reload，保留其他站点。WebSocket 路由必须支持 Upgrade，依据 [Apache 代理文档](https://httpd.apache.org/docs/2.4/mod/mod_proxy.html)。已有通配符证书可在覆盖目标域名且未过期时复用，沿用证书原有续期机制。
+
+后续 exec、ps、logs、备份和升级也要沿用相同的两份 -f 参数；升级仅启动 api，避免误启动 Caddy 抢占端口。不把实际服务器配置文件提交源码。
+
 ## 4. 注册两端并验收
 
 ```bash

@@ -1,0 +1,5 @@
+# Use with compose.yaml and start only the api service. Your existing TLS proxy owns 80/443.
+services:
+  api:
+    ports:
+      - "127.0.0.1:${API_BIND_PORT:-18080}:8000"
