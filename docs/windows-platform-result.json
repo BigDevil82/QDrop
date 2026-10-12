@@ -1,0 +1,12 @@
+{
+  "fixture": true,
+  "fixture_error": true,
+  "safe_names": true,
+  "clipboard": true,
+  "file_association_launch": true,
+  "tray_created": true,
+  "notification_registered": true,
+  "notification_submitted": true,
+  "close_hides": true,
+  "utc": "2026-10-12T12:27:39.2867784+00:00"
+}

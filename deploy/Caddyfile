@@ -1,0 +1,15 @@
+{$PUBLIC_DOMAIN} {
+    request_body {
+        max_size {$MAX_FILE_BYTES}
+    }
+    reverse_proxy api:8000 {
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 300s
+        }
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        Cache-Control "no-store"
+    }
+}

@@ -1,0 +1,4 @@
+# QDrop
+Implement only stages zero and one of QDrop_Development_Plan.md. Keep protocol and server authorization bidirectional. Never store real credentials or signing keys in this repository. Record executed tests separately from manual cases not executed. Reception ACK means durable local storage, not successful local action. Persist attempted before clipboard/open side effects. No permanent Android foreground service, background clipboard reading, OTP listener, or optional phase two/three UI.
+
+Commit coherent implementation and documentation changes during development after appropriate verification. Review staged files for secrets and private deployment details before committing. Use reserved example domains in public documentation; client endpoints are user settings, not fixed infrastructure. Do not push or deploy unless the user requests it.

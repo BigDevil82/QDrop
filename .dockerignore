@@ -1,0 +1,11 @@
+.git
+.tools
+.venv
+artifacts
+android
+windows
+data
+**/__pycache__
+**/.env
+**/*.jks
+**/*.keystore
