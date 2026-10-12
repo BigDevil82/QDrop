@@ -23,4 +23,5 @@ android/local.properties
 *.p8
 data/
 *.db*
+*.sqlite*
 signing.properties

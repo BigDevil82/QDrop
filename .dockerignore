@@ -7,5 +7,16 @@ windows
 data
 **/__pycache__
 **/.env
+**/.env.*
+.local
+docs/private
 **/*.jks
 **/*.keystore
+**/*.pfx
+**/*.pem
+**/*.key
+**/*.p12
+**/*.p8
+**/*.db*
+**/*.sqlite*
+**/signing.properties
