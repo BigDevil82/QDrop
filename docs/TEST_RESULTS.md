@@ -46,3 +46,9 @@
 代码确认两处缺口并修复：多项分享 EXTRA_TEXT 的列表形态未读取；在 QDrop 里“准备文字”会替换已准备文件。现在支持单条/列表 EXTRA_TEXT 与 ClipData 文本，手动准备文字保留文件并替换已有文本，按钮按上下文显示“附加文字”，输入框明确需先准备。来源协议依据：[Android ACTION_SEND_MULTIPLE](https://developer.android.com/reference/android/content/Intent#ACTION_SEND_MULTIPLE)。不读取图片 OCR 或后台剪贴板。
 
 修复后真机回归：5 个方法通过（未传 enrollment 的注册方法仅返回，不能计为新注册测试）；新用例实际启动 MainActivity，提供两个合成 ContentProvider URI 和列表中文文本，确认得到 file/file/text 三项私有快照及正确文本字节数/摘要，另验证单条与 ClipData 文本解析。这里的 URI 是测试数据，不冒充真实相册完整混合传输。首次运行被 HyperOS 拒绝后台启动 Activity 而超时；测试通过 shell 先把本 App 放到前台后复跑，5 项通过。Debug/Release 各 2 项 URL 单元测试、lint 和固定签名发布重建通过。
+
+## 公开源码配置复核
+
+两端默认服务器地址改为空，已有私有设置保留；公开示例改用保留域名。Git 暂存区检查未发现真实服务器 IP/域名、运行凭证或私钥；deploy/.env 被忽略，.env.example 可提交。Windows 重新构建与自包含发布通过，构建 0 警告/0 错误；Android Debug/Release 重新构建、各 2 项 URL 单元测试、lint 与 APK 固定签名验证通过。首轮 Windows 构建因本机联调进程锁定输出而失败，停止该进程后复跑通过。
+
+Compose 使用 deploy/.env.example 实际解析通过；Caddy 2.10.2 实际 adapt --validate 通过，额外将 MAX_FILE_BYTES 改为 1048576 验证生成配置请求体上限同步变化。没有运行 Docker 容器或申请公网证书，这些不能标记通过。
