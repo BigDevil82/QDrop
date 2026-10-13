@@ -1,1 +1,1 @@
-<network-security-config><base-config cleartextTrafficPermitted="false" /></network-security-config>
+<network-security-config><base-config cleartextTrafficPermitted="true" /></network-security-config>

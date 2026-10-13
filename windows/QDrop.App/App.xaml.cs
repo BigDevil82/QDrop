@@ -2,6 +2,9 @@ using System.IO;
 using System.IO.Pipes;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -133,6 +136,7 @@ public partial class App : Application
             if (settings.Token.Length == 0) window.Show();
             _ = ReceiverLoop();
             _ = CompensationLoop();
+            _ = LanDiscoveryLoop();
         }
         catch(Exception ex) { File.WriteAllText(Path.Combine(Paths.Root,"startup-error.txt"),ex.ToString()); MessageBox.Show(ex.GetType().Name+": "+ex.Message,"QDrop 启动失败"); Shutdown(1); }
     }
@@ -167,10 +171,13 @@ public partial class App : Application
         var u=new Uri(url);
         if(u.UserInfo.Length>0 || u.Query.Length>0 || u.Fragment.Length>0 || u.AbsolutePath!="/")throw new ArgumentException("服务地址只填写 origin");
         if(u.Scheme=="https")return;
-#if DEBUG
-        if(u.Scheme=="http" && (u.Host=="127.0.0.1" || u.Host=="localhost"))return;
-#endif
-        throw new ArgumentException("发布包只允许 HTTPS");
+        if(u.Scheme=="http" && IPAddress.TryParse(u.Host, out var address) && (IPAddress.IsLoopback(address) || address.IsIPv6LinkLocal || address.IsIPv6SiteLocal || IsPrivateV4(address)))return;
+        throw new ArgumentException("仅允许 HTTPS 或私有局域网 HTTP");
+    }
+    static bool IsPrivateV4(IPAddress address)
+    {
+        if(address.AddressFamily!=AddressFamily.InterNetwork)return false;
+        var b=address.GetAddressBytes();return b[0]==10 || b[0]==127 || b[0]==192 && b[1]==168 || b[0]==172 && b[1]>=16 && b[1]<=31;
     }
     void BuildTray()
     {
@@ -179,6 +186,7 @@ public partial class App : Application
         menu.Items.Add("设置与记录",null,(_,_)=>ShowWindow());
         menu.Items.Add("打开接收目录",null,(_,_)=> {Directory.CreateDirectory(settings.Directory);Open(settings.Directory);});
         menu.Items.Add("立即补收",null,async(_,_)=>await ManualSync());
+        menu.Items.Add("显示局域网地址",null,(_,_)=>MessageBox.Show(LanBaseUrl() ?? "本机局域网服务未配置。请先将服务地址设为 http://127.0.0.1:8000 并启动本地服务。","QDrop 局域网地址"));
         menu.Items.Add("验证剪贴板与打开",null,async(_,_)=>await SelfTest());
         menu.Items.Add("退出",null,(_,_)=>Shutdown());
         tray.ContextMenuStrip=menu;tray.DoubleClick+=(_,_)=>ShowWindow();
@@ -365,6 +373,33 @@ public partial class App : Application
         }
     }
     async Task CompensationLoop(){while(!stopping.IsCancellationRequested){try{await Task.Delay(60000,stopping.Token);await PurgeTexts();await Sync(true);}catch(OperationCanceledException){break;}catch(Exception ex){Note("清理/补收等待重试: "+ex.GetType().Name);}}}
+    async Task LanDiscoveryLoop()
+    {
+        // Discovery only returns a LAN address and device identity. Credentials stay in HTTPS/HTTP API headers.
+        try
+        {
+            using var udp=new UdpClient(48735); udp.EnableBroadcast=true;
+            while(!stopping.IsCancellationRequested)
+            {
+                var received=await udp.ReceiveAsync(stopping.Token);var request=Encoding.UTF8.GetString(received.Buffer);
+                const string prefix="QDROP/1 DISCOVER ";if(!request.StartsWith(prefix,StringComparison.Ordinal) || settings.Token.Length==0 || !Guid.TryParse(settings.DeviceId,out _))continue;
+                var nonce=request[prefix.Length..].Trim();if(!Guid.TryParse(nonce,out _))continue;
+                var url=LanBaseUrl();if(url==null)continue;
+                var body=Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new{version=1,nonce,device_id=settings.DeviceId,name=Environment.MachineName,base_url=url}));
+                await udp.SendAsync(body,body.Length,received.RemoteEndPoint);
+            }
+        }
+        catch(OperationCanceledException){}
+        catch(Exception ex){Note("局域网发现不可用: "+ex.GetType().Name);}
+    }
+    string? LanBaseUrl()
+    {
+        if(!Uri.TryCreate(settings.BaseUrl,UriKind.Absolute,out var configured) || configured.Scheme!="http")return null;
+        if(!IPAddress.TryParse(configured.Host,out var existing) || !IPAddress.IsLoopback(existing))return configured.ToString().TrimEnd('/');
+        var address=NetworkInterface.GetAllNetworkInterfaces().Where(n=>n.OperationalStatus==OperationalStatus.Up && n.NetworkInterfaceType!=NetworkInterfaceType.Loopback)
+            .SelectMany(n=>n.GetIPProperties().UnicastAddresses).Select(a=>a.Address).FirstOrDefault(IsPrivateV4);
+        return address==null?null:$"http://{address}:{configured.Port}";
+    }
     [System.Runtime.InteropServices.DllImport("wtsapi32.dll")]static extern bool WTSQuerySessionInformation(IntPtr server,int session,int info,out IntPtr buffer,out int bytes);
     [System.Runtime.InteropServices.DllImport("wtsapi32.dll")]static extern void WTSFreeMemory(IntPtr p);
     static bool SessionUnlocked()

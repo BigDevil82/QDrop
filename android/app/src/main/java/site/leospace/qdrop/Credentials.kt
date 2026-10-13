@@ -6,6 +6,9 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyStore
+import java.net.InetAddress
+import org.json.JSONArray
+import org.json.JSONObject
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -20,6 +23,24 @@ class Credentials(c: Context) {
     var defaultTarget: String get() = prefs.getString("target", "")!!; set(v) { save("target", v) }
     var deviceId: String get() = prefs.getString("device", "")!!; set(v) { save("device", v) }
     var deviceCache: String get() = prefs.getString("devices", "[]")!!; set(v) { save("devices", v) }
+    data class Profile(val targetId: String, val name: String, val url: String, val tokenCipher: String, val deviceId: String)
+    private fun profiles(): MutableList<Profile> = runCatching {
+        val a=JSONArray(prefs.getString("profiles", "[]"));MutableList(a.length()){i->a.getJSONObject(i).let { Profile(it.getString("target"),it.getString("name"),it.getString("url"),it.getString("token"),it.getString("device")) }}
+    }.getOrDefault(mutableListOf())
+    private fun saveProfiles(items: List<Profile>) {
+        val a=JSONArray();items.forEach { a.put(JSONObject().put("target",it.targetId).put("name",it.name).put("url",it.url).put("token",it.tokenCipher).put("device",it.deviceId)) };save("profiles",a.toString())
+    }
+    /** Called after the one-time registration has found this hub's only Windows receiver. */
+    fun rememberActiveTarget(targetId: String, name: String) {
+        val encrypted=prefs.getString("token", "")!!;if(encrypted.isEmpty() || token.isEmpty())return
+        val entry=Profile(targetId,name,url,encrypted,deviceId);val all=profiles().filter { it.targetId!=targetId }.toMutableList();all.add(entry);saveProfiles(all)
+    }
+    /** Switches only to a previously paired target; discovery never creates a new trust entry. */
+    fun useDiscoveredTarget(targetId: String, discoveredUrl: String): Boolean {
+        validate(discoveredUrl);val profile=profiles().firstOrNull { it.targetId==targetId } ?: return false
+        save("url",discoveredUrl.trimEnd('/'));save("token",profile.tokenCipher);save("device",profile.deviceId);save("target",profile.targetId);return true
+    }
+    fun knowsTarget(targetId: String) = profiles().any { it.targetId==targetId }
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         return ks.getKey("QDropCredential", null) as? SecretKey ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
@@ -34,7 +55,11 @@ class Credentials(c: Context) {
             val u = java.net.URI(url)
             require(!u.host.isNullOrEmpty()) { "服务地址需要有效主机名" }
             require(u.rawUserInfo == null && u.query == null && u.fragment == null && (u.path.isNullOrEmpty() || u.path == "/")) { "服务地址只填写 origin" }
-            require(u.scheme == "https" || (BuildConfig.DEBUG && u.scheme == "http" && u.host in listOf("127.0.0.1", "localhost"))) { "发布包只允许 HTTPS" }
+            if (u.scheme == "https") return
+            require(u.scheme == "http") { "服务地址只允许 HTTPS 或局域网 HTTP" }
+            require(u.host.matches(Regex("\\d{1,3}(\\.\\d{1,3}){3}"))) { "HTTP 仅允许私有局域网 IP" }
+            val address = runCatching { InetAddress.getByName(u.host) }.getOrNull()
+            require(address != null && (address.isSiteLocalAddress || address.isLinkLocalAddress || address.isLoopbackAddress)) { "HTTP 仅允许私有局域网 IP" }
         }
     }
 }

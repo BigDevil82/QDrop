@@ -66,15 +66,16 @@ class MainActivity : ComponentActivity() {
             try {
                 withContext(Dispatchers.IO) { require(uris.size <= 20) { "最多 20 个文件" }; for(u in uris) prepared.add(ShareInput.snapshot(this@MainActivity,u)); if(!text.isNullOrEmpty()) prepared.add(ShareInput.text(this@MainActivity,text)) }
                 vm.prepared.forEach { File(it.path).delete() }; vm.prepared = prepared
-                vm.message = "已读取分享并固定本地快照：${prepared.size} 项；点击目标即发送"
+                vm.message = "已读取分享并固定本地快照：${prepared.size} 项；正在寻找此处已配对电脑"
                 // Local diagnostic only: no URI, text body, token, or original name.
                 File(filesDir,"share-probe.json").writeText(JSONObject().put("count",prepared.size).put("items",org.json.JSONArray(prepared.map { JSONObject().put("kind",it.kind).put("size",it.size).put("sha256",it.sha) })).toString())
             } catch(e: Exception) { prepared.forEach { File(it.path).delete() }; vm.message = "读取失败: ${e.message}，请从原应用重新分享或选择文件" }
             finally { vm.busy = false }
+            if(vm.prepared.isNotEmpty()) autoDispatch()
         }
     }
     private fun refresh() {
-        lifecycleScope.launch { try { val c=Credentials(this@MainActivity); if(c.token.isEmpty())return@launch; val result=withContext(Dispatchers.IO){val api=Api(this@MainActivity);check(api.request("GET","/v1/me").getInt("protocol_version")==1){"协议不兼容，请升级客户端"};api.request("GET","/v1/devices")}; val a=result.getJSONArray("devices");c.deviceCache=a.toString(); vm.devices=(0 until a.length()).mapNotNull{a.getJSONObject(it).let{d->if(d.getString("platform")=="windows")Device(d.getString("id"),d.getString("name"),d.getBoolean("online")) else null}}.sortedByDescending{it.id==c.defaultTarget};Sender(this@MainActivity).statuses() }catch(e:Exception){vm.message="设备查询失败，可向已缓存目标排队: ${e.message ?: e.javaClass.simpleName}"} }
+        lifecycleScope.launch { try { val c=Credentials(this@MainActivity); if(c.token.isEmpty())return@launch; val result=withContext(Dispatchers.IO){val api=Api(this@MainActivity);check(api.request("GET","/v1/me").getInt("protocol_version")==1){"协议不兼容，请升级客户端"};api.request("GET","/v1/devices")}; val a=result.getJSONArray("devices");c.deviceCache=a.toString(); vm.devices=(0 until a.length()).mapNotNull{a.getJSONObject(it).let{d->if(d.getString("platform")=="windows")Device(d.getString("id"),d.getString("name"),d.getBoolean("online")) else null}}.sortedByDescending{it.id==c.defaultTarget};if(vm.devices.size==1){c.defaultTarget=vm.devices.single().id;c.rememberActiveTarget(vm.devices.single().id,vm.devices.single().name)};Sender(this@MainActivity).statuses() }catch(e:Exception){vm.message="设备查询失败：${e.message ?: e.javaClass.simpleName}"} }
     }
     private fun prepareText(text: String) {
         if(vm.busy)return
@@ -86,8 +87,26 @@ class MainActivity : ComponentActivity() {
                 val previous=vm.prepared.filter{it.kind=="text"}
                 vm.prepared=vm.prepared.filter{it.kind!="text"}+snapshot
                 previous.forEach{File(it.path).delete()}
-                vm.sent=false;vm.message="已准备 ${vm.prepared.size} 项（包含文字）；点击目标一起发送"
+                vm.sent=false;vm.message="已准备 ${vm.prepared.size} 项（包含文字）；正在寻找此处已配对电脑"
             }catch(e:Exception){vm.message="准备文字失败: ${e.message}"}
+            finally{vm.busy=false}
+            if(vm.prepared.isNotEmpty())autoDispatch()
+        }
+    }
+    private fun autoDispatch() {
+        if(vm.busy || vm.sent || vm.prepared.isEmpty())return
+        vm.busy=true;vm.message="正在发现局域网中的已配对电脑"
+        lifecycleScope.launch {
+            try {
+                val c=Credentials(this@MainActivity)
+                val targets=withContext(Dispatchers.IO){LanDiscovery.find().filter{c.knowsTarget(it.deviceId)}}
+                when {
+                    targets.isEmpty()->vm.message="未发现已配对电脑；请确认电脑 QDrop 正在运行且与手机同一 Wi‑Fi"
+                    targets.size>1->vm.message="发现多台已配对电脑；为防止误发，本次未发送"
+                    !c.useDiscoveredTarget(targets.single().deviceId,targets.single().baseUrl)->vm.message="局域网配对资料不可用，请在该电脑重新注册一次"
+                    else->{vm.busy=false;send(Device(targets.single().deviceId,targets.single().name,true),false);return@launch}
+                }
+            }catch(e:Exception){vm.message="局域网发现失败: ${e.javaClass.simpleName}"}
             finally{vm.busy=false}
         }
     }
@@ -119,21 +138,21 @@ class MainActivity : ComponentActivity() {
             if(vm.prepared.isNotEmpty()){
                 Row { Checkbox(sensitive,{sensitive=it});Text("敏感文本（5 分钟）") }
                 vm.prepared.forEach{p->Text("${p.name?:"附带文本"} · ${p.size} 字节");if(p.kind=="text")Text(runCatching{File(p.path).readText().take(200)}.getOrDefault("快照不可用"))}
-                vm.devices.forEach{d->Button(onClick={send(d,sensitive)},enabled=!vm.busy && !vm.sent){Text("${d.name} · ${if(!d.known)"状态未知，可排队" else if(d.online)"在线" else "离线可暂存"}${if(d.id==config.defaultTarget)" · 默认" else ""}")}}
+                Text("发送会自动投递到当前局域网内唯一已配对的电脑")
             }
             Button(onClick={showSettings=!showSettings}){Text("设置 / 注册")}
             if(showSettings){
-            OutlinedTextField(url,{url=it},label={Text("HTTPS 服务地址（debug 可本地回环）")})
+            OutlinedTextField(url,{url=it},label={Text("服务地址（HTTPS 或私有局域网 HTTP）")})
             OutlinedTextField(code,{code=it},label={Text("一次性注册码")})
             OutlinedTextField(name,{name=it},label={Text("设备名")})
-            Button(onClick={lifecycleScope.launch{try{config.url=url;val r=withContext(Dispatchers.IO){Api(this@MainActivity).post("/v1/enroll",JSONObject().put("code",code).put("device_name",name).put("platform","android").put("client_version","0.1.0"),false)};config.token=r.getString("token");config.deviceId=r.getString("device_id");code="";showSettings=false;vm.message="已注册";refresh()}catch(e:Exception){vm.message="注册失败: ${e.message}"}}}){Text("注册此手机")}
+            Button(onClick={lifecycleScope.launch{try{config.url=url;val r=withContext(Dispatchers.IO){Api(this@MainActivity).post("/v1/enroll",JSONObject().put("code",code).put("device_name",name).put("platform","android").put("client_version","0.1.0"),false)};config.token=r.getString("token");config.deviceId=r.getString("device_id");config.defaultTarget="";config.deviceCache="[]";code="";showSettings=false;vm.message="已注册，正在保存此处电脑的配对资料";refresh()}catch(e:Exception){vm.message="注册失败: ${e.message}"}}}){Text("注册此手机")}
             Button(onClick={if(Build.VERSION.SDK_INT>=33)permission.launch(Manifest.permission.POST_NOTIFICATIONS)}){Text("允许传输通知")}
             }
-            OutlinedTextField(text,{text=it},label={Text("文字 / URL（先准备，再点击目标发送）")})
+            OutlinedTextField(text,{text=it},label={Text("文字 / URL（准备后自动发送）")})
             Row { Button(onClick={val clipboard=getSystemService(ClipboardManager::class.java);text=clipboard.primaryClip?.getItemAt(0)?.coerceToText(this@MainActivity)?.toString().orEmpty()}){Text("粘贴")};Spacer(Modifier.width(8.dp));Button(onClick={prepareText(text) },enabled=!vm.busy){Text(if(vm.prepared.any{it.kind=="file"})"附加文字" else "准备文字")} }
             Button(onClick={pick.launch(arrayOf("*/*"))},enabled=!vm.busy){Text("选择文件（系统选择器）")}
             Row { Checkbox(sensitive,{sensitive=it});Text("手动标记敏感文本（5 分钟）") }
-            Button(onClick={refresh()}){Text("刷新设备 / 查询目标状态")}
+            Button(onClick={refresh()}){Text("刷新当前电脑状态")}
             Button(onClick={schedule(this@MainActivity);lifecycleScope.launch{withContext(Dispatchers.IO){Sender(this@MainActivity).run()}}}){Text("重试队列 / 刷新回执")}
             Text("最近任务：接收与本地动作互相独立")
             tasks.take(50).forEach{t->Text("${t.id.take(8)} · ${t.state} ${t.error.orEmpty()}")}
