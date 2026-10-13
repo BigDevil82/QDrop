@@ -115,14 +115,14 @@ Windows 托盘菜单提供“验证剪贴板与打开”；也可运行 `QDrop.A
 cd /srv/QDrop
 cp deploy/.env.example deploy/.env
 # 编辑 PUBLIC_DOMAIN / PUBLIC_BASE_URL 和容量策略；真实 .env 不提交。
-docker compose --env-file deploy/.env -f deploy/compose.yaml config --quiet
-docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
+docker compose --profile caddy --env-file deploy/.env -f deploy/compose.yaml config --quiet
+docker compose --profile caddy --env-file deploy/.env -f deploy/compose.yaml up -d --build
 docker compose --env-file deploy/.env -f deploy/compose.yaml exec api python -m app.cli enroll
 # 替换为自己的域名
 curl --fail https://qdrop.example.com/readyz
 ```
 
-Compose 只有 Caddy 和单实例 API；SQLite WAL 与私有磁盘放专用卷，API 以非 root 用户运行，公网不映射 API/数据目录。HTTPS 传正文，WSS 只提示；丢事件后仍从 inbox 补收。正文默认 commit 后 24 小时，敏感文本 5 分钟，ACK 后 5 分钟清理，清理周期 60 秒；活动下载租约最长 5 分钟。已接收文件留在用户接收目录，不随服务器 TTL 删除。
+独立服务器使用 `--profile caddy` 启动 Caddy 和单实例 API；已有 Apache/Nginx/Caddy 的服务器按部署说明只启动 API，并由现有 HTTPS 代理转发。SQLite WAL 与私有磁盘放专用卷，API 以非 root 用户运行，公网不映射 API/数据目录。HTTPS 传正文，WSS 只提示；丢事件后仍从 inbox 补收。正文默认 commit 后 24 小时，敏感文本 5 分钟，ACK 后 5 分钟清理，清理周期 60 秒；活动下载租约最长 5 分钟。已接收文件留在用户接收目录，不随服务器 TTL 删除。
 
 详细部署/备份/升级命令见 [部署说明](docs/DEPLOYMENT.md)，协议见 [protocol](protocol/README.md)，故障与下一步见 [已知问题](docs/KNOWN_ISSUES.md)。
 

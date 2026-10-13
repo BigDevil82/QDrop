@@ -24,6 +24,7 @@ services:
       options: {max-size: "10m", max-file: "3"}
   caddy:
     image: caddy:2.10.2-alpine
+    profiles: ["caddy"]
     restart: unless-stopped
     env_file: .env
     ports: ["80:80", "443:443", "443:443/udp"]

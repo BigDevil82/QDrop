@@ -62,10 +62,10 @@ PUBLIC_DOMAIN 只填主机名；PUBLIC_BASE_URL 填 HTTPS origin，不带路径�
 在仓库根目录执行，显式指定 env 文件；无 Docker 权限时按服务器账户安排使用 sudo。
 
 ```bash
-docker compose --env-file deploy/.env -f deploy/compose.yaml config --quiet
-docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
-docker compose --env-file deploy/.env -f deploy/compose.yaml ps
-docker compose --env-file deploy/.env -f deploy/compose.yaml logs --tail=100 api caddy
+docker compose --profile caddy --env-file deploy/.env -f deploy/compose.yaml config --quiet
+docker compose --profile caddy --env-file deploy/.env -f deploy/compose.yaml up -d --build
+docker compose --profile caddy --env-file deploy/.env -f deploy/compose.yaml ps
+docker compose --profile caddy --env-file deploy/.env -f deploy/compose.yaml logs --tail=100 api caddy
 # 改成自己的域名，不使用 -k 绕过证书校验
 curl --fail https://qdrop.example.com/readyz
 ```
@@ -74,7 +74,7 @@ curl --fail https://qdrop.example.com/readyz
 
 ### 已有 Apache 或其他 HTTPS 代理
 
-已有代理占用 80/443 时，使用下面的替代启动命令，只启动 API，不启动本项目的 Caddy：
+已有代理占用 80/443 时，使用下面的启动命令；Caddy 已放入显式 profile，因此不带 `--profile caddy` 就只启动 API：
 
 ```bash
 docker compose --env-file deploy/.env -f deploy/compose.yaml -f deploy/compose.external-proxy.example.yaml config --quiet
@@ -83,7 +83,7 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml -f deploy/compose.e
 
 API_BIND_PORT 可在私有 .env 调整，默认 18080；API 只绑定 127.0.0.1。Apache 示例见 deploy/apache-vhost.example.conf，要求 2.4.47+ 及 proxy/proxy_http/ssl/headers/reqtimeout 模块。在服务器复制为自己的独立站点，替换域名、证书路径和后端端口；文件上限需与 .env 保持一致。先执行 apache2ctl configtest，通过后 graceful reload，保留其他站点。WebSocket 路由必须支持 Upgrade，依据 [Apache 代理文档](https://httpd.apache.org/docs/2.4/mod/mod_proxy.html)。已有通配符证书可在覆盖目标域名且未过期时复用，沿用证书原有续期机制。
 
-后续 exec、ps、logs、备份和升级也要沿用相同的两份 -f 参数；升级仅启动 api，避免误启动 Caddy 抢占端口。不把实际服务器配置文件提交源码。
+后续 exec、ps、logs、备份和升级也要沿用相同的两份 -f 参数；升级仅启动 api，避免误启动 Caddy 抢占端口。证书续期后需 reload Apache，否则可能继续使用内存中的旧证书。可按自己的证书 lineage 修改 deploy/certbot-apache-reload.example.sh，安装为 root 所有的 deploy hook；原有流程已 reload 时无需重复配置。不把实际服务器配置文件提交源码。
 
 ## 4. 注册两端并验收
 
