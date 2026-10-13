@@ -59,7 +59,9 @@ class Credentials(c: Context) {
             require(u.scheme == "http") { "服务地址只允许 HTTPS 或局域网 HTTP" }
             require(u.host.matches(Regex("\\d{1,3}(\\.\\d{1,3}){3}"))) { "HTTP 仅允许私有局域网 IP" }
             val address = runCatching { InetAddress.getByName(u.host) }.getOrNull()
-            require(address != null && (address.isSiteLocalAddress || address.isLinkLocalAddress || address.isLoopbackAddress)) { "HTTP 仅允许私有局域网 IP" }
+            val octets=u.host.split('.').map { it.toInt() }
+            val sharedAddress=octets[0]==100 && octets[1] in 64..127
+            require(address != null && (address.isSiteLocalAddress || address.isLinkLocalAddress || address.isLoopbackAddress || sharedAddress)) { "HTTP 仅允许私有局域网 IP" }
         }
     }
 }

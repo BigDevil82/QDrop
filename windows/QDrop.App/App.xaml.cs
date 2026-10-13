@@ -9,6 +9,7 @@ using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Data.Sqlite;
@@ -85,6 +86,7 @@ public partial class App : Application
     DateTimeOffset serverOffsetAnchor;
     TimeSpan serverOffset;
     SqliteConnection db = null!;
+    Process? localServer;
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -105,6 +107,7 @@ public partial class App : Application
         {
             var conf = Path.Combine(Paths.Root, "settings.bin");
             if (File.Exists(conf)) settings = JsonSerializer.Deserialize<Settings>(ProtectedData.Unprotect(File.ReadAllBytes(conf), null, DataProtectionScope.CurrentUser))!;
+            StartBundledServer();
 #if DEBUG
             if(e.Args.Contains("--integration-test") || e.Args.Contains("--local-setup")) settings=JsonSerializer.Deserialize<Settings>(File.ReadAllText(Environment.GetEnvironmentVariable("QDROP_TEST_CONFIG")!))!;
             if(e.Args.Contains("--local-setup"))Save();
@@ -177,7 +180,7 @@ public partial class App : Application
     static bool IsPrivateV4(IPAddress address)
     {
         if(address.AddressFamily!=AddressFamily.InterNetwork)return false;
-        var b=address.GetAddressBytes();return b[0]==10 || b[0]==127 || b[0]==192 && b[1]==168 || b[0]==172 && b[1]>=16 && b[1]<=31;
+        var b=address.GetAddressBytes();return b[0]==10 || b[0]==127 || b[0]==192 && b[1]==168 || b[0]==172 && b[1]>=16 && b[1]<=31 || b[0]==100 && b[1]>=64 && b[1]<=127;
     }
     void BuildTray()
     {
@@ -211,6 +214,8 @@ public partial class App : Application
             try { settings.BaseUrl=address.Text.TrimEnd('/');ValidateUrl(settings.BaseUrl);using var response=await http.PostAsync(settings.BaseUrl+"/v1/enroll",Json(new{code=code.Text.Trim(),device_name=Environment.MachineName,platform="windows",client_version="0.1.0"}));response.EnsureSuccessStatusCode();var j=JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;settings.Token=j.GetProperty("token").GetString()!;settings.DeviceId=j.GetProperty("device_id").GetString()!;code.Clear();authFailed=false;Save();Note("注册成功");await Sync(true); }
             catch(Exception ex){Note("注册失败: "+ex.GetType().Name);}
         };
+        var localSetup=new Button{Content="初始化局域网并生成手机配对码",Margin=new Thickness(0,8,0,0)};p.Children.Add(localSetup);
+        localSetup.Click+=async(_,_)=>await InitializeLan();
         status=new TextBlock{Text="等待连接",TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,12,0,12)};p.Children.Add(status);
         records=new ListBox{Height=250};p.Children.Add(records);
         var retry=new Button{Content="补收 / 重试 ACK"};p.Children.Add(retry);retry.Click+=async(_,_)=>await ManualSync();
@@ -373,6 +378,48 @@ public partial class App : Application
         }
     }
     async Task CompensationLoop(){while(!stopping.IsCancellationRequested){try{await Task.Delay(60000,stopping.Token);await PurgeTexts();await Sync(true);}catch(OperationCanceledException){break;}catch(Exception ex){Note("清理/补收等待重试: "+ex.GetType().Name);}}}
+    string BundledRoot()=>Path.Combine(AppContext.BaseDirectory,"local-server");
+    void StartBundledServer()
+    {
+        var root=BundledRoot();var python=Path.Combine(root,"python","python.exe");var server=Path.Combine(root,"server");
+        if(!File.Exists(python) || !File.Exists(Path.Combine(server,"app","main.py")))return;
+        if(string.IsNullOrWhiteSpace(settings.BaseUrl))settings.BaseUrl="http://127.0.0.1:8000";
+        var start=new ProcessStartInfo(python){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=root};
+        foreach(var arg in new[]{"-m","uvicorn","app.main:app","--app-dir",server,"--host","0.0.0.0","--port","8000","--workers","1","--no-access-log","--no-proxy-headers"})start.ArgumentList.Add(arg);
+        start.Environment["DATA_DIR"]=Path.Combine(Paths.Root,"server-data");start.Environment["PYTHONPATH"]=server+Path.PathSeparator+Path.Combine(root,"site-packages");
+        localServer=Process.Start(start);
+    }
+    string CreateEnrollmentCode()
+    {
+        var root=BundledRoot();var python=Path.Combine(root,"python","python.exe");var server=Path.Combine(root,"server");
+        if(!File.Exists(python))throw new FileNotFoundException("安装包缺少本地服务运行时",python);
+        var start=new ProcessStartInfo(python){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,WorkingDirectory=root};
+        foreach(var arg in new[]{"-m","app.cli","enroll"})start.ArgumentList.Add(arg);
+        start.Environment["DATA_DIR"]=Path.Combine(Paths.Root,"server-data");start.Environment["PYTHONPATH"]=server+Path.PathSeparator+Path.Combine(root,"site-packages");
+        using var process=Process.Start(start)!;var output=process.StandardOutput.ReadToEnd();var error=process.StandardError.ReadToEnd();process.WaitForExit();
+        if(process.ExitCode!=0)throw new IOException("生成配对码失败: "+error.Trim());return output.Trim();
+    }
+    async Task InitializeLan()
+    {
+        try
+        {
+            settings.BaseUrl="http://127.0.0.1:8000";address.Text=settings.BaseUrl;
+            var serverReady=false;for(var i=0;i<30;i++){try{using var ready=await http.GetAsync(settings.BaseUrl+"/readyz");if(ready.IsSuccessStatusCode){serverReady=true;break;}}catch when(i<29){}await Task.Delay(200);}if(!serverReady)throw new IOException("本地服务未能启动");
+            var localIdentityValid=false;
+            if(settings.Token.Length>0)
+            {
+                try{using var check=new HttpRequestMessage(HttpMethod.Get,settings.BaseUrl+"/v1/me");check.Headers.Authorization=new AuthenticationHeaderValue("Bearer",settings.Token);using var response=await http.SendAsync(check);localIdentityValid=response.IsSuccessStatusCode;}catch{}
+            }
+            if(!localIdentityValid)
+            {
+                var own=CreateEnrollmentCode();using var response=await http.PostAsync(settings.BaseUrl+"/v1/enroll",Json(new{code=own,device_name=Environment.MachineName,platform="windows",client_version="0.1.0"}));response.EnsureSuccessStatusCode();
+                var j=JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;settings.Token=j.GetProperty("token").GetString()!;settings.DeviceId=j.GetProperty("device_id").GetString()!;authFailed=false;Save();
+            }
+            var phone=CreateEnrollmentCode();var lan=LanBaseUrl()??throw new IOException("没有可用的局域网 IPv4 地址");
+            MessageBox.Show("手机服务地址："+lan+"\n\n一次性注册码："+phone+"\n\n请在 10 分钟内完成手机注册。","QDrop 手机配对");Note("局域网服务已就绪");
+        }
+        catch(Exception ex){Note("局域网初始化失败: "+ex.GetType().Name);MessageBox.Show(ex.Message,"QDrop 局域网初始化失败");}
+    }
     async Task LanDiscoveryLoop()
     {
         // Discovery only returns a LAN address and device identity. Credentials stay in HTTPS/HTTP API headers.
@@ -384,7 +431,7 @@ public partial class App : Application
                 var received=await udp.ReceiveAsync(stopping.Token);var request=Encoding.UTF8.GetString(received.Buffer);
                 const string prefix="QDROP/1 DISCOVER ";if(!request.StartsWith(prefix,StringComparison.Ordinal) || settings.Token.Length==0 || !Guid.TryParse(settings.DeviceId,out _))continue;
                 var nonce=request[prefix.Length..].Trim();if(!Guid.TryParse(nonce,out _))continue;
-                var url=LanBaseUrl();if(url==null)continue;
+                var url=LanBaseUrl(received.RemoteEndPoint.Address);if(url==null)continue;
                 var body=Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new{version=1,nonce,device_id=settings.DeviceId,name=Environment.MachineName,base_url=url}));
                 await udp.SendAsync(body,body.Length,received.RemoteEndPoint);
             }
@@ -392,11 +439,16 @@ public partial class App : Application
         catch(OperationCanceledException){}
         catch(Exception ex){Note("局域网发现不可用: "+ex.GetType().Name);}
     }
-    string? LanBaseUrl()
+    string? LanBaseUrl(IPAddress? peer=null)
     {
         if(!Uri.TryCreate(settings.BaseUrl,UriKind.Absolute,out var configured) || configured.Scheme!="http")return null;
         if(!IPAddress.TryParse(configured.Host,out var existing) || !IPAddress.IsLoopback(existing))return configured.ToString().TrimEnd('/');
-        var address=NetworkInterface.GetAllNetworkInterfaces().Where(n=>n.OperationalStatus==OperationalStatus.Up && n.NetworkInterfaceType!=NetworkInterfaceType.Loopback)
+        IPAddress? address=null;
+        if(peer?.AddressFamily==AddressFamily.InterNetwork && !IPAddress.IsLoopback(peer))
+        {
+            try{using var route=new Socket(AddressFamily.InterNetwork,SocketType.Dgram,ProtocolType.Udp);route.Connect(new IPEndPoint(peer,9));address=((IPEndPoint)route.LocalEndPoint!).Address;}catch(SocketException){}
+        }
+        address??=NetworkInterface.GetAllNetworkInterfaces().Where(n=>n.OperationalStatus==OperationalStatus.Up && n.NetworkInterfaceType is NetworkInterfaceType.Wireless80211 or NetworkInterfaceType.Ethernet && n.GetIPProperties().GatewayAddresses.Any(g=>g.Address.AddressFamily==AddressFamily.InterNetwork))
             .SelectMany(n=>n.GetIPProperties().UnicastAddresses).Select(a=>a.Address).FirstOrDefault(IsPrivateV4);
         return address==null?null:$"http://{address}:{configured.Port}";
     }
@@ -429,6 +481,6 @@ public partial class App : Application
     }
     protected override void OnExit(ExitEventArgs e)
     {
-        stopping.Cancel();tray?.Dispose();if(notifications)AppNotificationManager.Default.Unregister();db?.Dispose();http.Dispose();singleton?.Dispose();base.OnExit(e);
+        stopping.Cancel();if(localServer is {HasExited:false}){localServer.Kill(true);localServer.WaitForExit(3000);}localServer?.Dispose();tray?.Dispose();if(notifications)AppNotificationManager.Default.Unregister();db?.Dispose();http.Dispose();singleton?.Dispose();base.OnExit(e);
     }
 }

@@ -1,8 +1,10 @@
 # QDrop
 
-个人自用的 Android → Windows 文件/文本快传。一期功能闭环已实现，阶段零已有真实手机分享和 Windows 托盘验证；**一期验收矩阵尚未全部验收**，详见 [测试记录](docs/TEST_RESULTS.md)。二、三期客户端功能未实现；协议、设备身份和服务端读正文/ACK 权限从第一版就支持双向。
+个人自用的 Android → Windows 文件/文本快传。日常模式面向“手机与当前电脑在同一局域网”：Windows 包内置本地 FastAPI 服务，Android 分享后自动发现当前网络中唯一已配对电脑并发送，不经过公网服务器，也不要求发送时选择设备。公网 Docker 部署保留为开源自部署选项。
 
-安装产物在 `artifacts/android/QDrop-release.apk`、`artifacts/android/QDrop-debug.apk`、`artifacts/QDrop-windows-x64.zip`。正式 Android 包名 `site.leospace.qdrop`，debug 包名 `site.leospace.qdrop.debug`，可同时安装。正式包只允许 HTTPS；debug 仅额外允许 localhost/127.0.0.1。Windows 包为 .NET 10 / Windows App SDK 自包含 win-x64 文件夹包。
+安装产物在 `artifacts/android/QDrop-release.apk`、`artifacts/android/QDrop-debug.apk`、`artifacts/QDrop-windows-x64.zip`。正式 Android 包名 `site.leospace.qdrop`，debug 包名 `site.leospace.qdrop.debug`，可同时安装。两者允许 HTTPS，以及私有 IPv4/共享地址空间的局域网 HTTP；公共地址 HTTP 仍拒绝。Windows 包为 .NET 10 / Windows App SDK 自包含 win-x64 文件夹包，并包含 Python 3.12 与本地服务依赖。
+
+个人局域网首次设置和日常流程见 [个人局域网模式](docs/LAN_MODE.md)。办公室电脑和宿舍笔记本各配对一次，之后手机按当前局域网发现结果自动切换，不用改地址或选电脑。
 
 源码分发包为 `artifacts/QDrop-source.zip`，各包校验值见 `artifacts/SHA256SUMS.txt`；源码包不包含工具链、密钥、运行凭证及用户传输正文。重新打包源码与校验值可运行 `.venv\Scripts\python.exe scripts\package-source.py`。
 
@@ -57,7 +59,7 @@ API 启动后，每个客户端各生成一次注册码，10 分钟内单次使�
 .\scripts\enroll.ps1 -Command devices
 ```
 
-手机点击“刷新设备”，填写文字或点击前台“粘贴”，再点击“准备文字”，最后点击目标电脑。分享文件时，在微信可用的“用其他应用打开/系统分享”、相册或浏览器选择 QDrop Debug，等私有快照准备完成后点击电脑。
+手机填写文字或点击前台“粘贴”，再点击“准备文字”；分享文件时，在微信可用的“用其他应用打开/系统分享”、相册或浏览器选择 QDrop。私有快照准备完成后，应用自动发现当前局域网中唯一已配对电脑并发送。
 
 每个文件一条传输，附带文本也是独立项目，同批共用 batch_id。手机可返回源 App，发送队列已持久化；前台服务只在上传任务执行期间运行。失败后通过有网络约束的 WorkManager 补偿，一轮最多 5 次，之后可手动重试。被系统强制停止后，下次打开恢复。
 
@@ -84,7 +86,7 @@ API 启动后，每个客户端各生成一次注册码，10 分钟内单次使�
 & .\.tools\android-sdk\platform-tools\adb.exe install -r artifacts\android\QDrop-release.apk
 ```
 
-正式包与历史同包名 debug 包签名不同，首次切换需卸载历史 debug 包后安装；卸载会重置手机本地身份和缓存。新 debug 包名已独立。正式 Windows/Android 均填写自己的可信 HTTPS 地址，重新使用对应服务器签发的注册码。
+正式包与历史同包名 debug 包签名不同，首次切换需卸载历史 debug 包后安装；卸载会重置手机本地身份和缓存。新 debug 包名已独立。公网自部署模式仍填写可信 HTTPS 地址；个人局域网模式在 Windows 点击“初始化局域网并生成手机配对码”，手机只在首次配对时填写提示的地址与注册码。
 
 ## 自动测试
 

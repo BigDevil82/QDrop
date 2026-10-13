@@ -60,3 +60,11 @@ Compose 使用 deploy/.env.example 实际解析通过；Caddy 2.10.2 实际 adap
 `scripts/check-live-deployment.py --restart-api` 对真实 HTTPS/WSS 执行并通过：未认证拒绝、设备注册、WSS 只含提示元数据、相同任务幂等和冲突、API 重启后的 inbox/ACK 恢复、UTF-8 摘要、1 MiB 文件摘要、双向角色权限、HTTP 与 WSS 撤销。测试身份在 finally 自动撤销，未在仓库、测试输出或持久配置中保留 token/注册码。Docker 默认 Caddy 改为显式 `caddy` profile，外部代理默认仅启动 API，防止既有端口被抢占。
 
 未执行新证书签发、证书到期续签、备份恢复、30 次延迟、长时间负载及实际手机/Windows 客户端连接公网地址的验收。
+
+## 个人局域网自动投递（2026-10-13）
+
+- Windows Release 使用项目内 .NET SDK 10.0.401 构建通过，0 警告、0 错误。
+- Android Debug 单元测试与 APK 构建通过；Release 单元测试、Lint、固定签名 APK 构建及 apksigner 验证通过。Lint 报告有 4 条非阻塞版本/迁移建议，无错误。
+- Windows UDP 48735 发现响应实际执行：校验随机 nonce、设备 UUID 和 HTTP origin；发现地址改为依据请求来源选择出站网卡，避免 VMware 等虚拟网卡优先。当前主机的 `100.64.172.48` 路由响应验证通过。
+- Windows 完整分发目录实际启动包内 Python 3.12/FastAPI；`GET /readyz` 返回成功，并在隔离目录创建 SQLite。包内 CLI 生成一次性注册码后，实际完成 Windows enroll 和带 Bearer token 的 `/v1/me`，协议版本为 1。
+- Android 已实现保存多套加密配对资料、仅匹配已配对设备、唯一目标自动发送、多目标停止防误发。当前检查时 adb 未连接手机，因此最新局域网发现与自动发送尚未完成真机验收，不能标记通过。

@@ -5,6 +5,14 @@ Set-Location $root
 $dotnet=if(Test-Path .tools/dotnet/dotnet.exe){(Resolve-Path .tools/dotnet/dotnet.exe).Path}else{'dotnet'}
 & $dotnet publish windows/QDrop.App/QDrop.App.csproj -c Release -r win-x64 --self-contained true -o artifacts/windows
 if($LASTEXITCODE){throw 'Windows publish failed'}
+$pythonRoot=Get-ChildItem .tools/python -Directory | Where-Object {$_.Name -like 'cpython-3.12.*-windows-x86_64-none'} | Sort-Object Name -Descending | Select-Object -First 1
+if(!$pythonRoot){throw 'Bundled Python 3.12 runtime not found; run scripts/bootstrap.ps1'}
+$localRoot=Join-Path $root 'artifacts/windows/local-server'
+New-Item -ItemType Directory $localRoot -Force | Out-Null
+Copy-Item $pythonRoot.FullName (Join-Path $localRoot 'python') -Recurse -Force
+Copy-Item (Join-Path $root 'server') (Join-Path $localRoot 'server') -Recurse -Force
+& .tools/uv/uv.exe pip install --python (Join-Path $localRoot 'python/python.exe') --target (Join-Path $localRoot 'site-packages') -r server/requirements.lock
+if($LASTEXITCODE){throw 'Bundled server dependencies failed'}
 if(Test-Path .tools/android-sdk){$env:ANDROID_HOME=(Resolve-Path .tools/android-sdk).Path}
 Push-Location android
 try {
