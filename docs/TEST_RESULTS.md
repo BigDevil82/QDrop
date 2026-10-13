@@ -11,8 +11,8 @@
 - Windows 安装目录自包含程序实际启动，平台自测验证共享 fixture、STA 剪贴板、TXT 文件关联打开、托盘、通知注册/提交和关闭隐藏。通知按钮点击、干净 Windows 主机仍待验收。
 - Android Debug 和 Release URL 单元测试分别 2 项通过；lint 无错误，Debug 的 3 条建议涉及新版本 Gradle、OkHttp 和 kapt/KSP。Release 构建含单元测试和 lint。
 - Android 真机 instrumentation：4 个测试方法通过，包含实际 ContentResolver 的未知大小、零字节、失效 URI、超过 50 MiB 流；EXTRA_STREAM/ClipData 去重；共享传输及错误 fixture；私有文本快照。注册测试需传入一次性 enrollment 参数，未提供参数时该方法不执行注册，不能算新增注册验证。
-- APK 固定外部签名验证与真机安装、正式包启动实际执行；Debug、测试 APK 和正式 APK 可分别安装。正式包 HTTPS 限制由 Release 单元测试验证，真实公网 TLS 联调尚未执行。
-- Docker Compose 配置解析通过；本机 Docker daemon 未运行，镜像构建和容器运行未执行。
+- APK 固定外部签名验证与真机安装、正式包启动实际执行；Debug、测试 APK 和正式 APK 可分别安装。正式包 HTTPS 限制由 Release 单元测试验证；私有部署的可信公网 HTTPS/WSS 协议联调已完成，客户端尚未重新配置为该公网地址。
+- Docker Compose 配置解析通过；本机 Docker daemon 未运行。私有服务器实际构建 API 镜像并运行；已有 Apache 占用 80/443，因此 API 仅绑定 loopback，由 Apache 使用现有可信通配证书反向代理。
 
 ## 第 15 节一期矩阵
 
@@ -51,4 +51,12 @@
 
 两端默认服务器地址改为空，已有私有设置保留；公开示例改用保留域名。Git 暂存区检查未发现真实服务器 IP/域名、运行凭证或私钥；deploy/.env 被忽略，.env.example 可提交。Windows 重新构建与自包含发布通过，构建 0 警告/0 错误；Android Debug/Release 重新构建、各 2 项 URL 单元测试、lint 与 APK 固定签名验证通过。首轮 Windows 构建因本机联调进程锁定输出而失败，停止该进程后复跑通过。
 
-Compose 使用 deploy/.env.example 实际解析通过；Caddy 2.10.2 实际 adapt --validate 通过，额外将 MAX_FILE_BYTES 改为 1048576 验证生成配置请求体上限同步变化。没有运行 Docker 容器或申请公网证书，这些不能标记通过。
+Compose 使用 deploy/.env.example 实际解析通过；Caddy 2.10.2 实际 adapt --validate 通过，额外将 MAX_FILE_BYTES 改为 1048576 验证生成配置请求体上限同步变化。
+
+## 私有服务器部署验证
+
+服务器使用已有 Apache 的外部代理模式：API 实际监听 `127.0.0.1:18080`，未公开 API 端口；独立虚拟主机通过 Apache 配置检查并平滑重载，已有站点 HTTP 响应均为 200。HTTP 正确重定向 HTTPS，现有可信通配证书覆盖部署子域名；证书续期后的 Apache reload hook 以 root:root 700 安装并手动执行通过。
+
+`scripts/check-live-deployment.py --restart-api` 对真实 HTTPS/WSS 执行并通过：未认证拒绝、设备注册、WSS 只含提示元数据、相同任务幂等和冲突、API 重启后的 inbox/ACK 恢复、UTF-8 摘要、1 MiB 文件摘要、双向角色权限、HTTP 与 WSS 撤销。测试身份在 finally 自动撤销，未在仓库、测试输出或持久配置中保留 token/注册码。Docker 默认 Caddy 改为显式 `caddy` profile，外部代理默认仅启动 API，防止既有端口被抢占。
+
+未执行新证书签发、证书到期续签、备份恢复、30 次延迟、长时间负载及实际手机/Windows 客户端连接公网地址的验收。

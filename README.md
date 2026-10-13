@@ -6,7 +6,7 @@
 
 源码分发包为 `artifacts/QDrop-source.zip`，各包校验值见 `artifacts/SHA256SUMS.txt`；源码包不包含工具链、密钥、运行凭证及用户传输正文。重新打包源码与校验值可运行 `.venv\Scripts\python.exe scripts\package-source.py`。
 
-已在 Redmi K70、Android 16、HyperOS 3 和 Windows 11 本机进行验证。用户已确认微信、图片和浏览器分享可用；三项真实传输的手机快照、服务端和电脑 SHA-256 相同，已 ACK。锁屏/休眠、真实磁盘满、30 次公网延迟、无开发工具的干净 Windows 环境仍待实测。公网部署依用户安排暂缓，域名 DNS 尚未创建。
+已在 Redmi K70、Android 16、HyperOS 3 和 Windows 11 本机进行验证。用户已确认微信、图片和浏览器分享可用；三项真实传输的手机快照、服务端和电脑 SHA-256 相同，已 ACK。锁屏/休眠、真实磁盘满、30 次公网延迟、无开发工具的干净 Windows 环境仍待实测。一次私有服务器部署的 HTTPS/WSS、重启补收、双向传输和撤销验证已完成；公开源码不记录该部署地址。
 
 ## 本地启动（PowerShell，仓库根目录）
 
@@ -109,7 +109,7 @@ Windows 托盘菜单提供“验证剪贴板与打开”；也可运行 `QDrop.A
 
 ## 服务端部署（服务器上执行）
 
-等域名 A 记录指向服务器、80/443 与现有代理关系确认后再执行；目前没有远程安装、改端口或部署。
+独立服务器使用 `--profile caddy`；已有 HTTPS 代理时使用部署说明中的 external-proxy compose 文件。部署前确认 DNS、80/443 与现有代理关系；不要为了部署停止或覆盖其他站点。
 
 ```bash
 cd /srv/QDrop

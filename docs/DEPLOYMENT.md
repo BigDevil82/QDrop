@@ -1,6 +1,6 @@
 # 自行部署
 
-本指南供公开源码使用。域名、IP、SSH 账号、注册码、token 和签名密钥由部署者自行配置，不提交 Git。两端在设置填写 HTTPS origin，无需为不同服务器重新编译。当前没有远程部署；本机配置验证不代表容器和公网验收通过。
+本指南供公开源码使用。域名、IP、SSH 账号、注册码、token 和签名密钥由部署者自行配置，不提交 Git。两端在设置填写 HTTPS origin，无需为不同服务器重新编译。一台私有服务器已按“已有 Apache 或其他 HTTPS 代理”模式完成实际 HTTPS/WSS 和协议验证；本机仍没有 Docker daemon。
 
 ## 1. 准备域名和服务器
 
@@ -114,4 +114,4 @@ chmod 600 backup.sqlite
 
 升级前备份，再 git pull --ff-only 和执行 up -d --build。检查迁移、readyz、HTTPS 文件校验与 ACK 后再删除旧备份。回滚需要兼容迁移。不要执行 down -v，它会删除数据和 TLS 卷。
 
-本机 Docker daemon 未运行；容器启动、公网 TLS 和备份恢复尚未执行，见 TEST_RESULTS.md。
+本机 Docker daemon 未运行。私有部署已验证容器启动、可信 HTTPS/WSS、API 重启后的补收、双向传输、摘要、幂等与撤销；备份恢复演练和长期运行仍未执行，见 TEST_RESULTS.md。
